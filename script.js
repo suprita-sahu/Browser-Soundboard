@@ -19,11 +19,17 @@ const volumeSlider = document.getElementById('volumeSlider');
 const volumeLabel = document.getElementById('volumeLabel');
 const stopAllBtn = document.getElementById('stopAllBtn');
 
-// Cache to keep track of actively playing Audio Objects
+// Map to store preloaded audio instances linked to their sound ID
+const audioElements = {};
 const activeAudioObjects = [];
 
-// Initialize soundboard buttons
+// Initialize soundboard buttons and preload audio
 sounds.forEach(sound => {
+    // Preload audio instantly onto the object map
+    const audioInstance = new Audio(sound.url);
+    audioInstance.preload = 'auto'; 
+    audioElements[sound.id] = audioInstance;
+
     const button = document.createElement('button');
     button.className = 'group relative bg-slate-700 hover:bg-indigo-950 active:bg-indigo-900 border border-slate-600 hover:border-indigo-500 rounded-xl p-5 min-h-[100px] flex flex-col items-center justify-center transition-all duration-200 shadow-md hover:shadow-indigo-900/20 active:scale-95';
     
@@ -32,22 +38,28 @@ sounds.forEach(sound => {
         <span class="absolute bottom-2 right-2 text-[10px] font-mono text-slate-500 group-hover:text-indigo-400/70 uppercase tracking-widest pointer-events-none">${sound.id}</span>
     `;
 
-    button.addEventListener('click', () => playSound(sound.url, button));
+    button.addEventListener('click', () => playSound(sound.id, button));
     grid.appendChild(button);
 });
 
-// Play audio handler
-function playSound(url, buttonElement) {
-    const audio = new Audio(url);
+// Play audio handler using preloaded map elements
+function playSound(soundId, buttonElement) {
+    const audio = audioElements[soundId];
+    
+    // Reset track to start if it's already playing (allows rapid spamming clicks)
+    audio.currentTime = 0;
     audio.volume = volumeSlider.value;
     
-    // Add glowing effect to the active pad button UI
     buttonElement.classList.add('ring-2', 'ring-indigo-500', 'bg-indigo-950/40');
     
-    audio.play().catch(err => console.log("Audio playback interrupted/blocked:", err));
-    activeAudioObjects.push(audio);
+    audio.play().catch(err => {
+        console.error("Playback blocked or link broken: ", err);
+    });
 
-    // Remove from tracking list and reset UI highlights once this specific audio ends
+    if (!activeAudioObjects.includes(audio)) {
+        activeAudioObjects.push(audio);
+    }
+
     audio.onended = () => {
         buttonElement.classList.remove('ring-2', 'ring-indigo-500', 'bg-indigo-950/40');
         const index = activeAudioObjects.indexOf(audio);
@@ -59,8 +71,6 @@ function playSound(url, buttonElement) {
 volumeSlider.addEventListener('input', (e) => {
     const currentVol = e.target.value;
     volumeLabel.textContent = `${Math.round(currentVol * 100)}%`;
-    
-    // Adjust all currently playing sounds dynamically
     activeAudioObjects.forEach(audio => {
         audio.volume = currentVol;
     });
@@ -72,11 +82,8 @@ stopAllBtn.addEventListener('click', () => {
         audio.pause();
         audio.currentTime = 0;
     });
-    
-    // Wipe active items array cleanly
     activeAudioObjects.length = 0;
 
-    // Reset UI active visual rings across all pads
     document.querySelectorAll('#soundboardGrid button').forEach(btn => {
         btn.classList.remove('ring-2', 'ring-indigo-500', 'bg-indigo-950/40');
     });
