@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Browser Soundboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col items-center justify-center p-6">
+
+    <div class="w-full max-w-4xl bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 border border-gray-700">
+        
+        <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-6 pb-6 border-b border-gray-700 mb-8">
+            <div>
+                <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+                    Audio Soundboard
+                </h1>
+                <p class="text-gray-400 text-sm mt-1">Click any pad to play. Adjust master volume below.</p>
+            </div>
+            
+            <div class="flex flex-wrap items-center gap-6 bg-gray-900/50 p-4 rounded-xl border border-gray-700/50">
+                <div class="flex items-center gap-3">
+                    <span class="text-gray-400 text-xs font-semibold uppercase tracking-wider">Volume</span>
+                    <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="0.5" 
+                           class="w-32 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+                    <span id="volumeValue" class="text-xs font-mono text-cyan-400 w-8">50%</span>
+                </div>
+                
+                <button id="stopAllBtn" class="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-semibold px-4 py-2 rounded-lg transition-all shadow-lg shadow-rose-900/30">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor"/>
+                    </svg>
+                    Stop All
+                </button>
+            </div>
+        </header>
+
+        <main id="soundboardGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            </main>
+    </div>
+
+    <script>
+        // 12 Sound configurations with clean oscillator frequencies
+        const sounds = [
+            { id: 'sound1', name: 'Low Chime', freq: 261.63, type: 'sine', color: 'from-amber-500 to-orange-600' },
+            { id: 'sound2', name: 'Retro Ping', freq: 329.63, type: 'square', color: 'from-emerald-500 to-teal-600' },
+            { id: 'sound3', name: 'High Alert', freq: 440.00, type: 'triangle', color: 'from-rose-500 to-red-600' },
+            { id: 'sound4', name: 'Laser Zap', freq: 523.25, type: 'sawtooth', color: 'from-cyan-500 to-blue-600' },
+            { id: 'sound5', name: 'Synth Pop', freq: 587.33, type: 'sine', color: 'from-orange-500 to-red-600' },
+            { id: 'sound6', name: 'Pulse Blaster', freq: 659.25, type: 'square', color: 'from-fuchsia-500 to-pink-600' },
+            { id: 'sound7', name: 'Sub Drop', freq: 196.00, type: 'triangle', color: 'from-indigo-500 to-violet-600' },
+            { id: 'sound8', name: 'Success Tone', freq: 783.99, type: 'sine', color: 'from-lime-500 to-green-600' },
+            { id: 'sound9', name: 'Radar Echo', freq: 880.00, type: 'sawtooth', color: 'from-red-600 to-neutral-800' },
+            { id: 'sound10', name: 'Click Trigger', freq: 987.77, type: 'square', color: 'from-sky-500 to-indigo-600' },
+            { id: 'sound11', name: 'Cyber Ring', freq: 1046.50, type: 'sine', color: 'from-yellow-500 to-amber-600' },
+            { id: 'sound12', name: 'Deep Bass', freq: 146.83, type: 'triangle', color: 'from-purple-500 to-purple-700' }
+        ];
+
+        const grid = document.getElementById('soundboardGrid');
+        const volumeSlider = document.getElementById('volumeSlider');
+        const volumeValue = document.getElementById('volumeValue');
+        const stopAllBtn = document.getElementById('stopAllBtn');
+
+        // Setup Audio Context safely
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+        let activeNodes = []; // Track active nodes to stop them
+        let currentVolume = volumeSlider.value;
+
+        // Initialize Soundboard Pads
+        sounds.forEach(sound => {
+            const btn = document.createElement('button');
+            btn.className = `relative overflow-hidden bg-gradient-to-br ${sound.color} p-5 rounded-xl font-bold tracking-wide shadow-md transition-all duration-200 transform hover:-translate-y-1 hover:shadow-xl hover:brightness-110 active:scale-95 flex flex-col items-center justify-center gap-2 h-28 text-center text-white`;
+            
+            btn.innerHTML = `
+                <span class="text-sm font-medium z-10">${sound.name}</span>
+                <div class="absolute inset-0 bg-black/10 opacity-0 hover:opacity-100 transition-opacity"></div>
+            `;
+
+            btn.addEventListener('click', () => {
+                // Resume context if browser suspended it
+                if (!audioCtx) {
+                    audioCtx = new AudioContext();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+
+                // Create oscillator and gain node for volume control
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                oscillator.type = sound.type;
+                oscillator.frequency.setValueAtTime(sound.freq, audioCtx.currentTime);
+                
+                // Simple fast envelope decay so sounds don't play forever
+                gainNode.gain.setValueAtTime(currentVolume, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.6);
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.6);
+
+                // Keep track of node to clear on "Stop All"
+                activeNodes.push({ oscillator, gainNode });
+            });
+
+            grid.appendChild(btn);
+        });
+
+        // Real-time Volume Adjustment Slider
+        volumeSlider.addEventListener('input', (e) => {
+            currentVolume = e.target.value;
+            volumeValue.textContent = `${Math.round(currentVolume * 100)}%`;
+        });
+
+        // Stop All Functionality
+        stopAllBtn.addEventListener('click', () => {
+            activeNodes.forEach(node => {
+                try {
+                    node.oscillator.stop();
+                } catch(e) {}
+            });
+            activeNodes = [];
+        });
+    </script>
+</body>
+</html>
