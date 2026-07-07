@@ -15,7 +15,7 @@
                 <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
                     Audio Soundboard
                 </h1>
-                <p class="text-gray-400 text-sm mt-1">Click pads to layer sounds together continuously. Adjust master volume below.</p>
+                <p class="text-gray-400 text-sm mt-1">Click pads to toggle sounds ON/OFF. They will layer together until you click Stop All.</p>
             </div>
             
             <div class="flex flex-wrap items-center gap-6 bg-gray-900/50 p-4 rounded-xl border border-gray-700/50">
@@ -40,20 +40,20 @@
     </div>
 
     <script>
-        // 12 Sound configurations with clean oscillator frequencies
+        // 12 Distinct Harmonics frequencies to ensure they clearly chord/layer together
         const sounds = [
-            { id: 'sound1', name: 'Low Chime', freq: 261.63, type: 'sine', color: 'from-amber-500 to-orange-600' },
-            { id: 'sound2', name: 'Retro Ping', freq: 329.63, type: 'square', color: 'from-emerald-500 to-teal-600' },
-            { id: 'sound3', name: 'High Alert', freq: 440.00, type: 'triangle', color: 'from-rose-500 to-red-600' },
-            { id: 'sound4', name: 'Laser Zap', freq: 523.25, type: 'sawtooth', color: 'from-cyan-500 to-blue-600' },
-            { id: 'sound5', name: 'Synth Pop', freq: 587.33, type: 'sine', color: 'from-orange-500 to-red-600' },
-            { id: 'sound6', name: 'Pulse Blaster', freq: 659.25, type: 'square', color: 'from-fuchsia-500 to-pink-600' },
-            { id: 'sound7', name: 'Sub Drop', freq: 196.00, type: 'triangle', color: 'from-indigo-500 to-violet-600' },
-            { id: 'sound8', name: 'Success Tone', freq: 783.99, type: 'sine', color: 'from-lime-500 to-green-600' },
-            { id: 'sound9', name: 'Radar Echo', freq: 880.00, type: 'sawtooth', color: 'from-red-600 to-neutral-800' },
-            { id: 'sound10', name: 'Click Trigger', freq: 987.77, type: 'square', color: 'from-sky-500 to-indigo-600' },
-            { id: 'sound11', name: 'Cyber Ring', freq: 1046.50, type: 'sine', color: 'from-yellow-500 to-amber-600' },
-            { id: 'sound12', name: 'Deep Bass', freq: 146.83, type: 'triangle', color: 'from-purple-500 to-purple-700' }
+            { id: 'sound1', name: 'Root C (Low)', freq: 130.81, type: 'sine', color: 'from-amber-500 to-orange-600' },
+            { id: 'sound2', name: 'Chord E', freq: 164.81, type: 'sine', color: 'from-emerald-500 to-teal-600' },
+            { id: 'sound3', name: 'Chord G', freq: 196.00, type: 'sine', color: 'from-rose-500 to-red-600' },
+            { id: 'sound4', name: 'Laser Saw', freq: 220.00, type: 'sawtooth', color: 'from-cyan-500 to-blue-600' },
+            { id: 'sound5', name: 'Retro Square', freq: 261.63, type: 'square', color: 'from-orange-500 to-red-600' },
+            { id: 'sound6', name: 'Smooth Triangle', freq: 329.63, type: 'triangle', color: 'from-fuchsia-500 to-pink-600' },
+            { id: 'sound7', name: 'High Harmonics', freq: 392.00, type: 'sine', color: 'from-indigo-500 to-violet-600' },
+            { id: 'sound8', name: 'Octave C', freq: 523.25, type: 'sine', color: 'from-lime-500 to-green-600' },
+            { id: 'sound9', name: 'Cyber Saw', freq: 587.33, type: 'sawtooth', color: 'from-red-600 to-neutral-800' },
+            { id: 'sound10', name: 'Industrial Square', freq: 659.25, type: 'square', color: 'from-sky-500 to-indigo-600' },
+            { id: 'sound11', name: 'Alert Peak', freq: 783.99, type: 'triangle', color: 'from-yellow-500 to-amber-600' },
+            { id: 'sound12', name: 'Sub Drone', freq: 85.00, type: 'triangle', color: 'from-purple-500 to-purple-700' }
         ];
 
         const grid = document.getElementById('soundboardGrid');
@@ -61,24 +61,26 @@
         const volumeValue = document.getElementById('volumeValue');
         const stopAllBtn = document.getElementById('stopAllBtn');
 
-        // Setup Audio Context safely
+        // Setup Audio Context Safely
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx = null;
-        let activeNodes = []; // Track active nodes to stop them or adjust volume dynamically
+        
+        // Track running nodes using an object lookup map
+        const runningNodes = {};
         let currentVolume = volumeSlider.value;
 
-        // Initialize Soundboard Pads
+        // Initialize Pads
         sounds.forEach(sound => {
             const btn = document.createElement('button');
             btn.className = `relative overflow-hidden bg-gradient-to-br ${sound.color} p-5 rounded-xl font-bold tracking-wide shadow-md transition-all duration-200 transform hover:-translate-y-1 hover:shadow-xl hover:brightness-110 active:scale-95 flex flex-col items-center justify-center gap-2 h-28 text-center text-white`;
             
             btn.innerHTML = `
                 <span class="text-sm font-medium z-10">${sound.name}</span>
+                <span id="status-${sound.id}" class="text-[10px] opacity-60 z-10 font-mono tracking-widest uppercase">OFF</span>
                 <div class="absolute inset-0 bg-black/10 opacity-0 hover:opacity-100 transition-opacity"></div>
             `;
 
             btn.addEventListener('click', () => {
-                // Resume context if browser suspended it due to user interaction rules
                 if (!audioCtx) {
                     audioCtx = new AudioContext();
                 }
@@ -86,52 +88,77 @@
                     audioCtx.resume();
                 }
 
-                // Create oscillator and gain node for volume control
-                const oscillator = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
+                const statusIndicator = document.getElementById(`status-${sound.id}`);
 
-                oscillator.type = sound.type;
-                oscillator.frequency.setValueAtTime(sound.freq, audioCtx.currentTime);
-                
-                // Set constant volume levels (no fast automatic decay)
-                gainNode.gain.setValueAtTime(currentVolume, audioCtx.currentTime);
+                // TOGGLE LOGIC: If it's already running, stop it. If not, start it!
+                if (runningNodes[sound.id]) {
+                    try {
+                        runningNodes[sound.id].oscillator.stop();
+                        runningNodes[sound.id].oscillator.disconnect();
+                        runningNodes[sound.id].gainNode.disconnect();
+                    } catch(e) {}
+                    delete runningNodes[sound.id];
+                    
+                    statusIndicator.textContent = "OFF";
+                    btn.classList.remove('ring-4', 'ring-white', 'brightness-125');
+                } else {
+                    // Create and start a brand new sound node layer
+                    const oscillator = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
 
-                oscillator.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-                
-                // Play infinitely until explicitly stopped
-                oscillator.start();
+                    oscillator.type = sound.type;
+                    oscillator.frequency.setValueAtTime(sound.freq, audioCtx.currentTime);
+                    gainNode.gain.setValueAtTime(currentVolume, audioCtx.currentTime);
 
-                // Keep track of active nodes so they can be tweaked or killed together
-                activeNodes.push({ oscillator, gainNode });
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    
+                    oscillator.start();
+
+                    // Save down references to run in parallel
+                    runningNodes[sound.id] = { oscillator, gainNode };
+                    
+                    statusIndicator.textContent = "ON 🔥";
+                    btn.className += " ring-4 ring-white brightness-125";
+                }
             });
 
             grid.appendChild(btn);
         });
 
-        // Real-time Master Volume Adjustment Slider
+        // Dynamic Active Master Volume Slider listener
         volumeSlider.addEventListener('input', (e) => {
             currentVolume = e.target.value;
             volumeValue.textContent = `${Math.round(currentVolume * 100)}%`;
             
-            // Adjust volume of all currently running sounds instantly
-            activeNodes.forEach(node => {
-                try {
-                    node.gainNode.gain.setValueAtTime(currentVolume, audioCtx.currentTime);
-                } catch(err) {}
-            });
+            // Instantly loop through every track currently running to modify gain real-time
+            for (const id in runningNodes) {
+                if (runningNodes[id]) {
+                    runningNodes[id].gainNode.gain.setValueAtTime(currentVolume, audioCtx.currentTime);
+                }
+            }
         });
 
-        // Stop All Functionality (Terminates all running nodes)
+        // Stop All Buttons handler resets completely
         stopAllBtn.addEventListener('click', () => {
-            activeNodes.forEach(node => {
+            for (const id in runningNodes) {
                 try {
-                    node.oscillator.stop();
-                    node.oscillator.disconnect();
-                    node.gainNode.disconnect();
+                    runningNodes[id].oscillator.stop();
+                    runningNodes[id].oscillator.disconnect();
+                    runningNodes[id].gainNode.disconnect();
                 } catch(e) {}
+                
+                const statusIndicator = document.getElementById(`status-${id}`);
+                if (statusIndicator) statusIndicator.textContent = "OFF";
+            }
+            
+            // Clean up visual status classes across all buttons
+            document.querySelectorAll('#soundboardGrid button').forEach(button => {
+                button.classList.remove('ring-4', 'ring-white', 'brightness-125');
             });
-            activeNodes = []; // Clear tracking register completely
+            
+            // Clear look-up tracker register cleanly
+            for (const key in runningNodes) delete runningNodes[key];
         });
     </script>
 </body>
